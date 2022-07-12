@@ -10,23 +10,6 @@ end
     y ~ filldist(Gamma(p[1], p[2]), N)
     return y
 end
-@model function model1717(y::Vector{Float64}, μ::Vector{Float64}, σ::Matrix{Float64}, ϵ::Normal{Float64})
-    p ~ MvLogNormal(μ, σ)
-    sig = ϵ.σ
-    x ~ filldist(Gamma(p[1], p[2]), length(y))
-    mu = x .+ ϵ.μ
-    y ~ arraydist(Normal.(mu, sig))
-    return y
-end
-@model function model1717(N::Int, μ::Vector{Float64}, σ::Matrix{Float64}, ϵ::Normal{Float64})
-    y = Vector{Float64}(undef, N)
-    p ~ MvLogNormal(μ, σ)
-    x ~ filldist(Gamma(p[1], p[2]), N)
-    sig = ϵ.σ
-    mu = x .+ ϵ.μ
-    y ~ arraydist(Normal.(mu, sig))
-    return y
-end
 
 function model1717(e::Experiment, N::Int, μ::Vector{Float64}, σ::Matrix{Float64}; witherror=true)
     y = Float64.(sample(events(e)[CHANNEL], N; replace=false))
