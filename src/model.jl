@@ -32,7 +32,6 @@ end
     return y
 end
 
-
 function cond1818(es::Vector, N::Int, μ, σ)
     x = reduce(vcat, repeat([i], N) for i in getproperty.(es, :iptg))
     y = reduce(vcat, sample(events(e)[CHANNEL], N; replace=false) for e in es)
