@@ -64,11 +64,12 @@ function Compatibilities(inputfn, outputfn)
     end
     DataFrame(sA=sA, sB=sB, bA=bA, bB=bB, pA=pA, pB=pB, c=c) |> CSV.write(DATADIR * outputfn)
 end
-#PerExperiment("experimentstats.csv")
-#PerGate("experimentstats.csv", "gatestats.csv")
-#PerGateRpu("experimentstats.csv", "gatestatsrpu.csv")
-#Compatibilities("gatestats.csv", "compatibilities.csv")
-#Compatibilities("gatestatsrpu.csv", "compatibilitiesrpu.csv")
+
+PerExperiment("experimentstats.csv")
+PerGate("experimentstats.csv", "gatestats.csv")
+PerGateRpu("experimentstats.csv", "gatestatsrpu.csv")
+Compatibilities("gatestats.csv", "compatibilities.csv")
+Compatibilities("gatestatsrpu.csv", "compatibilitiesrpu.csv")
 
 function compatibilitymap(fn, strain, backbone)
     df = CSV.read(DATADIR * fn, DataFrame)

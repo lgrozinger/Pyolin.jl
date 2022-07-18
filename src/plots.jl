@@ -6,6 +6,13 @@ end
     (x, y.(x))
 end
 
+@recipe function f(x, y, z::MultivariateDistribution)
+    X = repeat(reshape(x, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    Z = map((x, y) -> pdf(z, [x, y]), X, Y)
+    (x, y, Z)
+end
+
 @recipe function f(x::AbstractVector{<:Experiment}, y::AbstractVector{<:Experiment})
     (median.(x), median.(y))
 end

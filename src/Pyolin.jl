@@ -1,6 +1,5 @@
 module Pyolin
 
-using Base.Iterators
 using InlineStrings
 using CSV
 using Tables
@@ -9,21 +8,25 @@ using FCSFiles
 using FileIO
 using RecipesBase
 using Distributions
+using LaTeXStrings
+using Plots
+using HypothesisTests
+
 using Turing
+using Zygote
+Turing.setadbackend(:forwarddiff)
+
 using MCMCChains
-using RecipesBase
-using StatsPlots
 using StatsBase
 using LsqFit
-using Logging
 using Symbolics
-using CategoricalArrays
 
 import StatsBase.mean
 import StatsBase.median
 import StatsBase.var
 import StatsBase.minimum
 import StatsBase.maximum
+import StatsBase.sample
 
 import Distributions.fit
 
@@ -36,7 +39,7 @@ import Tables.columnnames
 
 # configurations
 const DATADIR   = "/home/lewis/data/pyolin_dataset/"
-const CHANNEL   = "B1-H"
+const CHANNEL   = "B1-A"
 const AUTOFLUOR = "1201"
 const STANDARD  = "1717"
 const INPUT     = "1818"
@@ -49,15 +52,15 @@ include("gates.jl")
 
 include("experiment.jl")
 export Experiment, Experiments
-export median, mean, var, fit
+export median, mean, var, quantile, fit, sample
 
 include("responsefunction.jl")
 export ResponseFunction, ResponseFunctions
 export compatible, rpuconvert
 
 include("model.jl")
-export model1717, model1818, cond1717, cond1818
-export StandardModel, InputModel
+export Standardisation, InputSensor
+
 
 include("plots.jl")
 

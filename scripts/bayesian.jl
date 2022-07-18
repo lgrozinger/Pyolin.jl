@@ -2,13 +2,15 @@ using Pyolin
 using Turing
 using MCMCChains
 using Plots
-using Plots
+using StatsPlots
 using Plots.Measures
 using DataFrames
 using CSV
 using LinearAlgebra
 using ProgressMeter
 using Random
+using LaTeXStrings
+using HypothesisTests
 
 
 const DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
@@ -23,22 +25,92 @@ commonopts = Dict(
     :markerstrokealpha => 0.5
 )
 
-function __statisticpoint__(xmodel, ymodel, statsfun, N)
-    xsamples = reduce(vcat, xmodel() for _ in 1:N)
-    ysamples = reduce(vcat, ymodel() for _ in 1:N)
-    statsfun(xsamples), statsfun(ysamples)
+function standardisationchain(experiment; N=8192, M=8192)
+    μ = [1.0, 1.0]
+    Σ = Matrix(0.1I, 2, 2)
+    model = Standardisation(experiment, N, μ, Σ)
+    Turing.setadbackend(:forwarddiff)
+    sample(model, NUTS(M, 0.8), M)
+end
+function inputchain(experiments)
+    μ = [1.0, 1.0, 1.0, 1.0]
+    Σ = Matrix(0.1I, 4, 4)
+    model = InputSensor(experiments, 512, μ, Σ)
+    Turing.setadbackend(:forwarddiff)
+    sample(model, NUTS(512, 0.65), 4096)
+end
+function inverterchain(experiments)
+    μ = repeat([1.0], 8)
+    Σ = Matrix(0.1I, 8, 8)
+    model = Inverter(experiments, 256, μ, Σ)
+    Turing.setadbackend(:zygote)
+    sample(model, NUTS(512, 0.65), 4096)
 end
 
-function __statisticpoints__(xmodels, ymodels, statsfun, N)
-    [__statisticpoint__(x, y, statsfun, N) for (x, y) in zip(xmodels, ymodels)]
+function contouring(x, y)
+    f = fit(MvNormal, log.(hcat(x, y)))
+    f = MvLogNormal(f.μ, collect(f.Σ))
+    ex = minimum(x):0.01:maximum(x)
+    why = minimum(y):0.01:maximum(y)
+    X = repeat(reshape(ex, 1, :), length(y), 1)
+    Y = repeat(y, 1, length(x))
+    Z = map((x, y) -> pdf(f, [x, y]), X, Y)
+    contour(x, y, Z; cbar=false)
 end
 
-function __statisticplot__(xmodels, ymodels, statsfun, N; kwargs...)
-    xy = __statisticpoints__(xmodels, ymodels, statsfun, N)
-    plt = scatter(first.(xy), last.(xy); kwargs...)
-    min, max = minimum(first.(xy)), maximum(first.(xy))
-    plot!(plt, [min, max], [min, max], label=false, linestyle=:dash)
-    plt
+function densitysubplot(data, letter; kwargs...)
+    opts = Dict(
+        :ylabel => "Density",
+        :label => false,
+        :linewidth => 2,
+        :tickfontsize => 8,
+        :titlefontsize => 10,
+        :titleloc => :left,
+        :title => letter
+    )
+    density(data; merge(opts, kwargs)...)
+end
+
+function plotstandardisationchain(chain)
+    f = Standardisation(chain)
+    p = Array(chain, [:parameters])
+    Pp = fit(MvNormal, log.(p'))
+    Pp = MvLogNormal(Pp.μ, collect(Pp.Σ))
+
+    krange = range(minimum(p[:,1]), maximum(p[:,1]), 1024)
+    θrange = range(minimum(p[:,2]), maximum(p[:,2]), 1024)
+    kθ = heatmap(
+        krange, θrange, Pp;
+        titleloc=:left,
+        title="C",
+        titlefontsize=10,
+        cbar=false,
+        tickfontsize=8,
+        ylabel=L"\theta",
+        xlabel="k"
+    )
+    k = densitysubplot(p[:,1], "A"; xlabel="k")
+    θ = densitysubplot(p[:,2], "B"; xlabel=L"\theta", ylabel="")
+    s = reduce(vcat, f() for _ in 1:2^16)
+    y = densitysubplot(s, "D"; xlabel="y", label="Estimated", tickfontsize=10, linewidth=3)
+    l = @layout [
+        [a b c]
+        d
+    ]
+    plot(k, θ, kθ, y, layout=l)
+end
+
+function plotinputchain2d(chain; kwargs...)
+    f = InputSensor(chain)
+    x = eps(Float64) .+ 2000 .* rand(2^14)
+    y = f(x)()
+    histogram2d(x, y; kwargs...)
+end
+
+function plotinputchain(chain, x; kwargs...)
+    f = InputSensor(chain)
+    y = f(repeat([x], 2^14))()
+    density(y; kwargs...)
 end
 
 function __checktypes__(model)
@@ -52,102 +124,41 @@ function __checktypes__(model)
     )
 end
 
-function __sampleexperiment__(experiment)
-    evs = events(experiment)
-    () -> sample(evs[Pyolin.CHANNEL], 1)
-end
-
-function __sampledistribution__(experiment; type=Gamma)
-    distribution = fit(type, experiment)
-    () -> rand(distribution, 1)
-end
-
 function __savechain__(experiment, chain)
     fn = "chain-$(experiment.strain)-$(experiment.backbone)-$(experiment.plasmid)-$(experiment.iptg).csv"
     DataFrame(chain) |> CSV.write(fn)
-end
-
-function __samplestandard__(experiment, N=4096; witherror=true)
-    priors = ([1.0, 1.0], Matrix(0.25I, 2, 2))
-    model = model1717(experiment, N, priors...; witherror=witherror)
-    chain = sample(model, NUTS(256, 0.65), 4096; drop_warmup=true, verbose=false)
-    __savechain__(experiment, chain)
-    psamples = reduce(hcat, x[:] for x in get_params(chain).p)
-    mvn = fit(MvNormal, log.(psamples'))
-    if witherror
-        model1717(1, mvn.μ, collect(mvn.Σ), model.args.ϵ)
-    else
-        model1717(1, mvn.μ, collect(mvn.Σ))
-    end
 end
 
 frame = CSV.read(DATADIR * "experimentstats.csv", DataFrame)
 standardisations = filter(r -> r.plasmid == "1717", frame)
 inputsensors = filter(r -> r.plasmid == "1818" && r.iptg != 0, frame)
 
-function __bayesstatistics__(experiments)
-    bayes = [__samplestandard__(experiment; witherror=false) for experiment in experiments]
-    experimental = [__sampleexperiment__(experiment) for experiment in experiments]
+function process_standardisation(e)
+    chain = standardisationchain(e)
+    __savechain__(e, chain)
+    plt = plotstandardisationchain(chain)
+    samples = sample(events(e)[Pyolin.CHANNEL], 2^15)
+    histogram!(plt, samples; label="Sampled", subplot=4, normalize=:true)
 
-    means = __statisticpoints__(bayes, experimental, mean, 2^14)
-    variances = __statisticpoints__(bayes, experimental, var, 2^14)
-    means, variances
-end
-# mom_mean(Experiments(standardisations), "means-1717-method-of-moments.svg")
-# mom_var(Experiments(standardisations), "vars-1717-method-of-moments.svg")
+    f = Standardisation(chain)
+    fsamples = reduce(vcat, f() for _ in 1:2^15)
 
-# mom_mean(Experiments(inputsensors), "means-1818-method-of-moments.svg")
-# mom_var(Experiments(inputsensors), "vars-1818-method-of-moments.svg")
+    ks = ApproximateTwoSampleKSTest(samples, fsamples)
+    turingstat = sqrt(ks.n_x * ks.n_y / (ks.n_x + ks.n_y)) * ks.δ
+    turingpvalue = pvalue(ks)
+    @show turingstat
+    @show turingpvalue
+    ks = ApproximateTwoSampleKSTest(samples, rand(fit(Gamma, e), 2^15))
+    fitstat = sqrt(ks.n_x * ks.n_y / (ks.n_x + ks.n_y)) * ks.δ
+    fitpvalue = pvalue(ks)
+    @show fitstat
+    @show fitpvalue
 
-function bayesian_standard(experiments, outputfn)
-    N = 512
-    M = 4096
-
-    Ne = length(experiments)
-    x = Matrix{Float64}(undef, 2, Ne)
-    y = Matrix{Float64}(undef, 2, Ne)
-    prior = ([1.0, 1.0], Matrix(0.1I, 2, 2))
-
-    for i in 1:Ne
-        samples = sample(events(experiments[i])[Pyolin.CHANNEL], N; replace=false)
-        model = StandardModel(model1717(samples, prior...), M)
-        y[1, i] = mean(samples)
-        y[2, i] = var(samples)
-        posterior = model(N)
-        x[1, i] = mean(posterior[3, :])
-        x[2, i] = var(posterior[3, :])
-    end
-        
-    opts = Dict(
-        :xlabel => "Model mean",
-        :ylabel => "Sample mean",
-        :guidefontsize => 12,
-        :legend => false,
-        :tickfontsize => 12,
-        :markersize => 6
-    )
-    plt = scatter(x[1, :], y[1, :]; opts...)
-    line = [minimum(x[1, :]), maximum(x[1, :])]
-    plot!(plt, line, line)
-    savefig(plt, FIGDIR * "models/means-" * outputfn)
-
-    opts = merge(
-        opts,
-        Dict(:xlabel=>"Model variance", :ylabel=>"Sample variance")
-    )
-    plt = scatter(x[2, :], y[2, :]; opts...)
-    line = [minimum(x[2, :]), maximum(x[2, :])]
-    plot!(plt, line, line, xscale=:log10, yscale=:log10)
-    savefig(plt, FIGDIR * "models/vars-" * outputfn)
+    savefig(plt, FIGDIR * "standardisations/$(e.strain)-$(e.backbone)-$(e.iptg).svg")
+    turingstat, turingpvalue, fitstat, fitpvalue
 end
 
-function bayesian_inputsensor(experiments, outputfn)
-    N = 512
-    M = 4096
-    prior = ([1.0, 1.0, 1.0, 1.0], Matrix(0.5I, 4, 4))
-    model = cond1818(experiments, N, prior...)
-    InputModel(model, M)
+function process_standardisations(frame)
+    scores = map(process_standardisation, Experiments(frame))
+    scores
 end
-
-# bayesian_standard(Experiments(standardisations), "1717-bayesian-model.svg")
-# m = bayesian_inputsensor(Experiments(filter(r -> r.strain == "KT2440" && r.backbone == "pSeva221", inputsensors)), nothing)

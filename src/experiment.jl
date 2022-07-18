@@ -1,4 +1,4 @@
-const DEFGATE! = (Spike!("FSC-H", 30, 4, 0.1) ∘ NonZero!("FSC-A", "SSC-A", "B1-H", "B1-A"))
+const DEFGATE! = (Zscore!("B1-H", 3.5) ∘ Zscore!("SSC-H", 3.5) ∘ Zscore!("FSC-H", 3.5) ∘ NonZero!("FSC-A", "SSC-A", "B1-H", "B1-A"))
 
 struct Experiment{T<:Real}
     strain::String63
@@ -31,7 +31,7 @@ function Experiment(strain, backbone, plasmid, iptg)
     )
 end
 Experiment(row::DataFrameRow) = Experiment(row.strain, row.backbone, row.plasmid, row.iptg)
-Experiments(frame::DataFrame) = Experiment.(eachrow(frame))
+Experiments(frame) = Experiment.(eachrow(frame))
 function Experiments(fn::AbstractString)
     function rowfun(r)
         Experiment(
@@ -66,6 +66,8 @@ StatsBase.mean(e::Experiment) = e.mean
 StatsBase.var(e::Experiment) = e.var
 StatsBase.maximum(e::Experiment) = e.max
 StatsBase.minimum(e::Experiment) = e.min
+StatsBase.quantile(e::Experiment, α::T) where {T<:Real} = quantile(events(e)[CHANNEL], α)
+StatsBase.sample(e::Experiment, N::Int; replace=false) = sample(events(e)[CHANNEL], N; replace=replace)
 
 # fitting
 Distributions.fit(d::Type{Normal}, e::Experiment) = d(e.mean, √(e.var))

@@ -6,7 +6,6 @@ function zscore_smooth_idxs(Y, lag, threshold, influence)
     stdFilter = zeros(N)
     avgFilter[lag - 1] = mean(Y[1:lag])
     stdFilter[lag - 1] = std(Y[1:lag])
-
     @inbounds for i in range(lag, stop=N-1)
         if abs(Y[i] - avgFilter[i - 1]) > threshold  * stdFilter[i - 1]
             smooth[i] = false
@@ -19,6 +18,15 @@ function zscore_smooth_idxs(Y, lag, threshold, influence)
     end
 
     return smooth
+end
+
+function zscore_idxs(Y, threshold)
+    N = length(Y)
+    σ = std(Y)
+    μ = mean(Y)
+    lb = μ - σ * threshold
+    ub = μ + σ * threshold
+    (x -> lb < x < ub).(Y)
 end
 
 
