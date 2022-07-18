@@ -38,7 +38,7 @@ import Tables.getcolumn
 import Tables.columnnames
 
 # configurations
-const DATADIR   = "/home/lewis/data/pyolin_dataset/"
+const DATADIR   = "/home/campus.ncl.ac.uk/b8051106/data/"
 const CHANNEL   = "B1-A"
 const AUTOFLUOR = "1201"
 const STANDARD  = "1717"
@@ -59,7 +59,8 @@ export ResponseFunction, ResponseFunctions
 export compatible, rpuconvert
 
 include("model.jl")
-export Standardisation, InputSensor
+export Standardisation, Standardisations, InputSensor
+export marginalk, marginalθ, savechain, hypothesistest
 
 
 include("plots.jl")

@@ -17,6 +17,64 @@ end
     (median.(x), median.(y))
 end
 
+@userplot StandardisationPlot
+@recipe function f(x::StandardisationPlot)
+    s, = x.args
+
+    guidefontsize --> 12
+    tickfontsize --> 10
+    legendfontsize --> 12
+
+    l = @layout [
+        [a b c]
+        d
+    ]
+    layout --> l
+
+    @series begin
+        seriestype := :density
+        xlabel := "k"
+        ylabel := "Density"
+        label := false
+        subplot := 1
+        marginalk(s)
+    end
+
+    @series begin
+        seriestype := :density
+        xlabel := L"\theta"
+        ylabel := "Density"
+        label := false
+        subplot := 2
+        marginalk(s)
+    end
+
+    @series begin
+        seriestype := :histogram2d
+        xlabel := "k"
+        ylabel := L"\theta"
+        subplot := 3
+        marginalk(s), marginalθ(s)
+    end
+
+    @series begin
+        seriestype := :histogram
+        normalize := true
+        xlabel := "y"
+        ylabel := "Density"
+        label := "Sampled"
+        subplot := 4
+        sample(s.e, 4096)
+    end
+
+    @series begin
+        seriestype := :density
+        label := "Estimated"
+        subplot := 4
+        sample(s, 4096)
+    end
+end
+
 @userplot InverterPlot
 @recipe function f(x::InverterPlot)
     if length(x.args) != 2 || !(typeof(x.args[1]) <: AbstractVector{<:Experiment}) ||

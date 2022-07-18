@@ -5,8 +5,8 @@ using Plots
 using Plots.Measures
 
 
-const DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
-const FIGDIR = "/home/lewis/sauce/julia/Pyolin/figures/"
+const DATADIR = "/home/campus.ncl.ac.uk/b8051106/sauce/julia/Pyolin.jl/data/"
+const FIGDIR = "/home/campus.ncl.ac.uk/b8051106/sauce/julia/Pyolin.jl/figures/"
 
 PerExperiment(outputfn) = Experiments(Pyolin.index) |> DataFrame |> CSV.write(DATADIR * outputfn)
 
@@ -14,14 +14,11 @@ function PerGate(inputfn, outputfn)
     frame = CSV.read(DATADIR * inputfn, DataFrame)
     types = unique(frame[:, [:strain, :backbone, :plasmid]])
     filter!(r -> !(r.plasmid in [Pyolin.INPUT, Pyolin.AUTOFLUOR, Pyolin.STANDARD]), types)
-
     results = ResponseFunction[]
     for row in eachrow(types)
         inputs  = Experiments(row.strain, row.backbone, Pyolin.INPUT, DATADIR * inputfn)
         outputs = Experiments(row.strain, row.backbone, row.plasmid, DATADIR * inputfn)
         push!(results, ResponseFunction(inputs, outputs))
-        plt = inverterplot(inputs, outputs)
-        savefig(plt, FIGDIR * "response/$(row.strain)-$(row.backbone)-$(row.plasmid).svg")
     end
     results |> DataFrame |> CSV.write(DATADIR * outputfn)
 end
@@ -41,8 +38,6 @@ function PerGateRpu(inputfn, outputfn)
             rpuconvert(inputs, autos, standards),
             rpuconvert(outputs, autos, standards)
         ))
-        plt = inverterplot(rpuconvert(inputs, autos, standards), rpuconvert(outputs, autos, standards))
-        savefig(plt, FIGDIR * "response/$(row.strain)-$(row.backbone)-$(row.plasmid)-rpu.svg")
     end
     results |> DataFrame |> CSV.write(DATADIR * outputfn)
 end
@@ -105,5 +100,5 @@ function compatibilitymaps(fn)
     end
 end
 
-compatibilitymaps("compatibilities.csv")
-compatibilitymaps("compatibilitiesrpu.csv")
+# compatibilitymaps("compatibilities.csv")
+# compatibilitymaps("compatibilitiesrpu.csv")

@@ -20,12 +20,27 @@ Standardisations(es::Vector{Experiment}, k::UD, θ::UD, N::Int=1024) = Standardi
 
 marginalk(s::Standardisation) = Array(group(s.chain, "k"), [:parameters])[:]
 marginalθ(s::Standardisation) = Array(group(s.chain, "θ"), [:parameters])[:]
+
+StatsBase.mean(s::Standardisation) = mean(sample(s, length(events(s.e)[CHANNEL])))
+StatsBase.var(s::Standardisation) = var(sample(s, length(events(s.e)[CHANNEL])))
+
 function StatsBase.sample(s::Standardisation, N::Int)
     chain = sample(s.chain, N)
     k = Array(group(chain, "k"), [:parameters])
     θ = Array(group(chain, "θ"), [:parameters])
     idxs = sample(1:length(k[:]), N; replace=false)
     rand.(Gamma.(k[:][idxs], θ[:][idxs]))
+end
+
+function savechain(s::Standardisation, dir)
+    fn = "chain-$(s.strain)-$(s.backbone)-1717-$(s.e.iptg).csv"
+    DataFrame(s.chain) |> CSV.write(dir * fn)
+end
+
+function hypothesistest(s::Standardisation)
+    x = sample(s, 4096)
+    y = sample(s.e, 4096)
+    ApproximateTwoSampleKSTest(x, y)
 end
 
 @model function _standardisation(y, kdist::UD, θdist::UD, N::Int=1)
@@ -38,40 +53,22 @@ end
     return y
 end
 
-function plotit(s::Standardisation)
-    opts = Dict(
-        :guidefontsize => 10,
-        :tickfontsize => 8,
-        :legendfontsize => 10,
-    )
-    
-    A = density(marginalk(s), xlabel="k", ylabel="Density", label="")
-    B = density(marginalθ(s), xlabel=L"\theta", ylabel="Density", label="")
-    C = histogram2d(
-        marginalk(s),
-        marginalθ(s),
-        xlabel="k",
-        ylabel=L"\theta",
-        label="",
-        cbar=false
-    )
-    D = histogram(sample(s.e, 4096); xlabel="y", ylabel="Density", label="Sampled", normalize=true)
-    density!(D, sample(s, 4096), label="Estimated", linewidth=3)
-    plot!(D, xlims=(0, quantile(s.e, 0.98)))
-
-    l = @layout [
-        [a b c]
-        d
-    ]
-    plot(A, B, C, D, layout=l)
+struct InputSensor
+    strain::String
+    backbone::String
+    prior_k::UD
+    prior_θ::UD
+    e::Experiment
+    chain::Chains
 end
-
-function hypothesistest(s::Standardisation)
-    x = sample(s, 4096)
-    y = sample(s.e, 4096)
-    ApproximateTwoSampleKSTest(x, y)
+function InputSensor(e::Experiment, k::UD, θ::UD, N::Int=1024)
+    y = Float64.(sample(e, N; replace=true))
+    model = _standardisation(y, k, θ)
+    Turing.setadbackend(:zygote)
+    chain = sample(model, NUTS(N, 0.65), N * 8)
+    Standardisation(e.strain, e.backbone, k, θ, e, chain)
 end
-
+InputSensors(es::Vector{Experiment}, k::UD, θ::UD, N::Int=1024) = Standardisation.(e, k, θ, N)
 
 @model function InputSensor(x::Vector{T}, y, μ::Vector{T}, σ::Matrix{T}) where {T<:Real}
     if y === missing
