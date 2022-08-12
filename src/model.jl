@@ -10,6 +10,11 @@ function conditions end
 chain(x::Model) = x.chain
 model(x::Model) = x.model
 
+function save(x::Model, fn::AbstractString)
+    h5open(fn, "w") do f
+        write(f, chain(x))
+    end
+end
 
 # a constitutive expression model
 @model function constitutive(μ::LogNormal{T}, σ::LogNormal{T}, y::Vector{T}) where {T<:Real}
@@ -49,6 +54,13 @@ end
 
 function Constitutive(e::Experiment, N::Int=2048)
     Constitutive(e, LogNormal(1f0, 1f0), LogNormal(1f0, 1f0), N)
+end
+
+function Constitutive(e::Experiment, fn::AbstractString)
+    chain = h5open(fn, "r") do f
+        read(f, Chains)
+    end
+    Constitutive(chain, chain.info.model, e)
 end
 
 function priorpredict(x::Constitutive, N::Int)
