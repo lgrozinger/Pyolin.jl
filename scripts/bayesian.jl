@@ -13,8 +13,8 @@ using LaTeXStrings
 using HypothesisTests
 
 
-const DATADIR = "/home/campus.ncl.ac.uk/b8051106/sauce/julia/Pyolin.jl/data/"
-const FIGDIR = "/home/campus.ncl.ac.uk/b8051106/sauce/julia/Pyolin.jl/figures/"
+DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
+FIGDIR = "/home/lewis/sauce/julia/Pyolin/figures/"
 
 commonopts = Dict(
     :guidefontsize => 12,

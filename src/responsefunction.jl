@@ -1,4 +1,61 @@
-struct ResponseFunction{T<:Real}
+function _f1_(y₀, y₁)
+    function (x, p)
+        k, n = p
+        ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
+    end
+end
+function _j1_(y₀, y₁, N)
+    @variables k n x[1:N]
+    x = collect(x)
+    expression = ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
+    j = Symbolics.jacobian(expression, [k, n])
+    J, _ = build_function(j, x, [k, n], expression=Val{false})
+    J
+end
+function _f2_()
+    function (x, p)
+        y₀, y₁, k, n = p
+        ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
+    end
+end
+function _j2_(N)
+    @variables y₀ y₁ k n x[1:N]
+    x = collect(x)
+    expression = ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
+    j = Symbolics.jacobian(expression, [y₀, y₁, k, n])
+    J, _ = build_function(j, x, [y₀, y₁, k, n], expression=Val{false})
+    J
+end
+
+function lsq(X::Vector{T}, Y::Vector{T}) where {T<:Real}
+    y₀, y₁ = minimum(Y), maximum(Y)
+    x₀, x₁ = minimum(X), maximum(X)
+    opts = Dict(
+        :upper => [T(Inf), T(256.0)],
+        :lower => [x₀, one(T)],
+        :show_trace => false,
+        :maxIter => 1000
+    )
+    try
+        k, n = curve_fit(
+            _f1_(y₀, y₁),
+            _j1_(y₀, y₁, length(X)),
+            X,
+            Y,
+            [x₀/2 + x₁/2, one(T)];
+            opts...,
+        ).param
+        y₀, y₁, k, n
+    catch e
+        if e isa LinearAlgebra.SingularException
+            T(0.0), T(0.0), T(0.0), T(1.0)
+        else
+            throw(e)
+        end
+    end
+end
+
+struct Hill{T<:Real}
     strain::String63
     backbone::String63
     plasmid::String63
@@ -7,57 +64,112 @@ struct ResponseFunction{T<:Real}
     K::T
     n::T
 end
-function ResponseFunction(inputs::Vector{<:Experiment}, outputs::Vector{<:Experiment})
-    strain   = outputs[1].strain
-    backbone = outputs[1].backbone
-    plasmid  = outputs[1].plasmid
 
+function Hill(inputs::Vector{<:Experiment}, outputs::Vector{<:Experiment})
+    s, b, p = outputs[1].strain, outputs[1].backbone, outputs[1].plasmid
     X, Y = median.(inputs), median.(outputs)
-    ymin, ymax, K, n = lsqfitting(X, Y)
-    ResponseFunction(strain, backbone, plasmid, ymin, ymax, K, n)
+    y₀, y₁, k, n = lsq(X, Y)
+    Hill(s, b, p, y₀, y₁, k, n)
 end
-function ResponseFunction(strain, backbone, plasmid)
+
+function Hill(strain, backbone, plasmid)
     inputs  = Experiments(search(strain, backbone, INPUT))
+    autos   = Experiments(search(strain, backbone, AUTOFLUOR))
+    stds    = Experiments(search(strain, backbone, STANDARD))
     outputs = Experiments(search(strain, backbone, plasmid))
-    ResponseFunction(inputs, outputs)
+    Hill(rpuconvert(inputs, autos, stds), rpuconvert(outputs, autos, stds))
 end
-function ResponseFunctions(fn::AbstractString)
+
+function Hills(df)
     function rowfun(r)
-        ResponseFunction(
+        Hill(
             String63(r.strain), String63(r.backbone), String63(r.plasmid),
             r.ymin, r.ymax, r.K, r.n
         )
     end
-    rowfun.(eachrow(CSV.read(fn, DataFrame)))
+    rowfun.(eachrow(df))
 end
 
-const RF = ResponseFunction
+Hills(fn::AbstractString) = Hills(CSV.read(fn, DataFrame))
 
-# the function 
-function (R::RF)(x::T) where {T<:Real}
+function (R::Hill)(x::T) where {T<:Real}
     y0, y1, n, K = R.ymin, R.ymax, R.n, R.K
     y0 + (y1 - y0) * K^n / (x^n + K^n)
 end
 
-# properties of response functions
-repressor(x::RF) = split(x.plasmid, "_")[1]
-samestrain(x::RF, y::RF) = x.strain == y.strain
-samerepressor(x::RF, y::RF) = repressor(x) == repressor(y)
-orthogonal(x::RF, y::RF) = !samestrain(x, y) || !samerepressor(x, y)
-outputhigh(x::RF) = x.ymax / 2
-outputlow(x::RF) = x.ymin * 2
-inputhigh(x::RF) = (x.K^x.n * (x.ymax - 2 * x.ymin) / x.ymin)^(1 / x.n)
-inputlow(x::RF)  = (x.K^x.n * x.ymax / (x.ymax - 2 * x.ymin))^(1 / x.n)
-valid(x::RF) = outputhigh(x) > outputlow(x) && inputhigh(x) > inputlow(x)
-invertshigh(x::RF, y::RF) = y(outputhigh(x)) < outputlow(y)
-invertslow(x::RF, y::RF) = y(outputlow(x)) > outputhigh(y)
-inverts(x::RF, y::RF) = invertshigh(x, y) && invertslow(x, y)
-compatible(x::RF, y::RF) = orthogonal(x, y) && valid(x) && valid(y) && inverts(x, y)
+repressor(x::Hill)              = split(x.plasmid, "_")[1]
+samestrain(x::Hill, y::Hill)    = x.strain == y.strain
+samerepressor(x::Hill, y::Hill) = repressor(x) == repressor(y)
+orthogonal(x::Hill, y::Hill)    = !samestrain(x, y) || !samerepressor(x, y)
+outputhigh(x::Hill)             = x.ymax / 2
+outputlow(x::Hill)              = x.ymin * 2
+function inputlow(x::Hill)
+    y₀, y₁, k, n = x.ymin, x.ymax, x.K, x.n
+    (k^n * (2 / (1 - y₀ / (y₁ - y₀)) - 1))^(1/n)
+end
+function inputhigh(x::Hill)
+    y₀, y₁, k, n = x.ymin, x.ymax, x.K, x.n
+    (k^n * (y₁ / y₀ - 2))^(1/n)
+end
+valid(x::Hill)                  = outputhigh(x) > outputlow(x) #&& inputhigh(x) > inputlow(x)
+invertshigh(x::Hill, y::Hill)   = y(outputhigh(x)) < outputlow(y)
+invertslow(x::Hill, y::Hill)    = y(outputlow(x)) > outputhigh(y)
+inverts(x::Hill, y::Hill)       = invertshigh(x, y) && invertslow(x, y)
+compatible(x::Hill, y::Hill)    = orthogonal(x, y) && valid(x) && valid(y) && inverts(x, y)
 
-# tables interface
-istable(x::Vector{T}) where {T<:RF}   = true
-rowaccess(x::Vector{T}) where {T<:RF} = true
-rows(x::Vector{T}) where {T<:RF}      = x
-schema(x::Vector{T}) where {T<:RF}    = Tables.Schema(fieldnames(T), fieldtypes(T))
+istable(x::Vector{T}) where {T<:Hill}   = true
+rowaccess(x::Vector{T}) where {T<:Hill} = true
+rows(x::Vector{T}) where {T<:Hill}      = x
+schema(x::Vector{T}) where {T<:Hill}    = Tables.Schema(fieldnames(T), fieldtypes(T))
 
+@recipe function f(x, y::Hill)
+    (x, y.(x))
+end
 
+@userplot NotPlot
+@recipe function f(x::NotPlot)
+    inputs, outputs = x.args
+    xs = range(0.8*minimum(median.(inputs)), 1.125*maximum(median.(inputs)), 100)
+    h = Hill(inputs, outputs)
+
+    xlabel --> "Input"
+    ylabel --> "Output"
+    guidefontsize  --> 10
+    legendfontsize --> 10
+    tickfontsize   --> 10
+    palette --> :Accent_8
+
+    @series begin
+        seriestype := :line
+        linewidth --> 3
+        label := "Hill model"
+        collect(xs), h.(xs)
+    end
+
+    @series begin
+        seriestype := :scatter
+        markershape := :circle
+        markersize --> 5
+        linewidth := 1
+        label := "Data points"
+        inputs, outputs
+    end
+
+    if valid(h) && get(plotattributes, :thresholds, false)
+        @series begin
+            seriestype := :vline
+            linewidth := 2
+            linestyle := :dash
+            label := "Input thresholds"
+            [inputlow(h), inputhigh(h)]
+        end
+        @series begin
+            seriestype := :hline
+            linewidth := 2
+            linestyle := :dash
+            label := "Output thresholds"
+            [outputhigh(h), outputlow(h)]
+        end
+    end
+    
+end

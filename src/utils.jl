@@ -29,6 +29,21 @@ function zscore_idxs(Y, threshold)
     (x -> lb < x < ub).(Y)
 end
 
+function frechet(A, B)
+    C = pairwise(Euclidean(eps(eltype(A))), A, B, dims=2)
+    for i in 2:size(A)[2]
+        C[i, 1] = max(C[i-1, 1], C[i, 1])
+    end
+
+    for j in 2:size(B)[2]
+        C[1, j] = max(C[1, j-1], C[1, j])
+        for i in 2:size(A)[2]
+            C[i, j] = max(min(C[i-1, j-1], C[i, j-1], C[i-1, j]), C[i, j])
+        end
+    end
+
+    C[end, end]
+end
 
 function lsqfitting(X::Vector{T}, Y::Vector{T}) where {T<:Real}
     y0, y1 = minimum(Y), maximum(Y)

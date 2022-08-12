@@ -12,6 +12,7 @@ struct Experiment{T<:Real}
     min::T
     fn::String255
 end
+
 function Experiment(strain, backbone, plasmid, iptg)
     row = search(strain, backbone, plasmid, iptg)
     fn = String255(row.filename)
@@ -30,8 +31,11 @@ function Experiment(strain, backbone, plasmid, iptg)
         fn
     )
 end
+
 Experiment(row::DataFrameRow) = Experiment(row.strain, row.backbone, row.plasmid, row.iptg)
+
 Experiments(frame) = Experiment.(eachrow(frame))
+
 function Experiments(fn::AbstractString)
     function rowfun(r)
         Experiment(
@@ -41,6 +45,7 @@ function Experiments(fn::AbstractString)
     end
     rowfun.(eachrow(CSV.read(fn, DataFrame)))
 end
+
 function Experiments(strain, backbone, plasmid, fn::AbstractString)
     function rowfun(r)
         Experiment(
@@ -53,14 +58,24 @@ function Experiments(strain, backbone, plasmid, fn::AbstractString)
     sort!(frame, [:iptg])
     rowfun.(eachrow(frame))
 end
+
 function Experiments(strain, backbone, plasmid)
     iptgs = sort(unique(index.iptg))
     [Experiment(strain, backbone, plasmid, iptg) for iptg in iptgs]
 end
 
+Auto(e::Experiment)     = Experiment(e.strain, e.backbone, String63("1201"), e.iptg)
+Standard(e::Experiment) = Experiment(e.strain, e.backbone, String63("1717"), e.iptg)
+Input(e::Experiment)    = Experiment(e.strain, e.backbone, String63("1818"), e.iptg)
+Autos(E::Vector{<:Experiment})     = Auto.(E)
+Standards(E::Vector{<:Experiment}) = Standard.(E)
+Inputs(E::Vector{<:Experiment}) = Input.(E)
+
+
 # experimental data
 row(e::Experiment) = search(e.strain, e.backbone, e.plasmid, e.iptg)
 events(e::Experiment) = DEFGATE!(events(row(e)))
+Base.length(e::Experiment) = length(events(e)[CHANNEL])
 StatsBase.median(e::Experiment) = e.median
 StatsBase.mean(e::Experiment) = e.mean
 StatsBase.var(e::Experiment) = e.var
@@ -86,10 +101,26 @@ rows(x::Vector{Experiment})                = x
 schema(x::Vector{T}) where {T<:Experiment} = Tables.Schema(fieldnames(T), fieldtypes(T))
 
 # rpu conversion
-function rpuconvert(x::Experiment{T}, auto::Experiment{T}, standard::Experiment{T}) where {T<:Real}
+function rpuevents(x::Experiment{T}, standard::Experiment{T}) where {T<:Real}
+    c = 1 / median(standard)
+    sample(x, length(x)) .* c
+end
+function rpuevents(x::Experiment{T}, auto::Experiment{T}, standard::Experiment{T}) where {T<:Real}
     if median(x) < median(auto)
         @warn "RPU conversion smudge for $(x.strain), $(x.backbone), $(x.plasmid), $(x.iptg)\nMedian of experiment: $(x.median)\nMedian of autofluorescence: $(auto.median)"
-        c = eps(T)^2
+        c = eps(T)
+    else
+        c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
+    end
+    sample(x, length(x)) .* c
+end
+rpuevents(x::AbstractVector, auto::AbstractVector, standard::AbstractVector) = rpuevents.(x, auto, standard)
+rpuevents(x::AbstractVector, standard::AbstractVector) = rpuevents.(x, standard)
+
+function rpuconvert(x::Experiment, auto::Experiment, standard::Experiment)
+    if median(x) < median(auto)
+        @warn "RPU conversion smudge for $(x.strain), $(x.backbone), $(x.plasmid), $(x.iptg)\nMedian of experiment: $(x.median)\nMedian of autofluorescence: $(auto.median)"
+        c = eps(typeof(x).parameters[1])
     else
         c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
     end
@@ -99,4 +130,15 @@ function rpuconvert(x::Experiment{T}, auto::Experiment{T}, standard::Experiment{
         x.fn
     )
 end
-rpuconvert(x::T, auto::T, standard::T) where {T<:Vector{<:Experiment}} = rpuconvert.(x, auto, standard)
+rpuconvert(x::AbstractVector, auto::AbstractVector, standard::AbstractVector) = rpuconvert.(x, auto, standard)
+
+function rpuconvert(x::Experiment, standard::Experiment)
+    c = 1 / median(standard)
+    Experiment(
+        x.strain, x.backbone, x.plasmid, x.iptg,
+        x.mean * c, x.median * c, x.var * c^2, x.max * c, x.min * c,
+        x.fn
+    )
+end
+rpuconvert(x::AbstractVector, standard::AbstractVector) = rpuconvert.(x, standard)
+
