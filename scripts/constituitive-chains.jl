@@ -14,7 +14,7 @@ DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
 FIGDIR = "/home/lewis/sauce/julia/Pyolin/figures/dispersion/"
 
 frame = CSV.read(DATADIR * "experimentstats.csv", DataFrame)
-E = Experiments(frame)
+E = Experiments(frame[103:104, :])
 
 function process()
     results = DataFrame(
@@ -32,7 +32,7 @@ function process()
     )
 
     function work(e)
-        C = Constituitive(e, 1024)
+        C = Constitutive(e, 512)
         save(C, DATADIR * "chains/$(e.strain)-$(e.backbone)-$(e.plasmid)-$(e.iptg)-const.h5")
         plt = constitutiveplot(s)
         savefig(plt, FIGDIR * "$(e.strain)-$(e.backbone)-$(e.plasmid)-$(e.iptg).svg")
