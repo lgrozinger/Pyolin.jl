@@ -53,7 +53,7 @@ function Constitutive(e::Experiment, μ::LogNormal{T}, σ::LogNormal{T}, N::Int=
 end
 
 function Constitutive(e::Experiment, N::Int=2048)
-    Constitutive(e, LogNormal(1f0, 1f0), LogNormal(1f0, 1f0), N)
+    Constitutive(e, LogNormal(2f0, 5f-1), LogNormal(2f0, 5f-1), N)
 end
 
 function Constitutive(e::Experiment, fn::AbstractString)
@@ -90,12 +90,19 @@ function simulate(x::Constitutive, N::Int)
     rand.(Gamma.(p[1, :], p[2, :]))
 end
 
+function load(fn::AbstractString, experiment::Experiment)
+    chain = h5open(fn, "r") do f
+        read(f, Chains)
+    end
+    model = chain.info.model
+    Constitutive(chain, model, experiment)
+end
+
 struct Induced <: Model
     chain::Chains
     model::DynamicPPL.Model
     e    ::Vector{<:Experiment}
 end
-
 
 @userplot ConstitutivePlot
 @recipe function f(x::ConstitutivePlot)

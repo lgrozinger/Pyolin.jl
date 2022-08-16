@@ -1,4 +1,4 @@
-const DEFGATE! = (Zscore!("B1-H", 3.5) ∘ Zscore!("SSC-H", 3.5) ∘ Zscore!("FSC-H", 3.5) ∘ NonZero!("FSC-A", "SSC-A", "B1-H", "B1-A"))
+const DEFGATE! = (Zscore!("B1-A", 3.5) ∘ Zscore!("SSC-H", 3.5) ∘ Zscore!("FSC-H", 3.5) ∘ NonZero!("FSC-A", "SSC-A", "B1-H", "B1-A"))
 
 struct Experiment{T<:Real}
     strain::String63
@@ -16,8 +16,8 @@ end
 function Experiment(strain, backbone, plasmid, iptg)
     row = search(strain, backbone, plasmid, iptg)
     fn = String255(row.filename)
+    @show row
     samples = DEFGATE!(events(row))
-
     Experiment(
         String63(strain),
         String63(backbone),

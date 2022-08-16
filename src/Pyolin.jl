@@ -50,8 +50,8 @@ import Tables.getcolumn
 import Tables.columnnames
 
 # configurations
-const DATADIR   = "/home/lewis/data/pyolin_dataset/"
-const CHANNEL   = "B1-A"
+const DATADIR   = "data/dataset/"
+const CHANNEL   = "B1-H"
 const AUTOFLUOR = "1201"
 const STANDARD  = "1717"
 const INPUT     = "1818"
@@ -71,7 +71,7 @@ export Hill, Hills
 export compatible
 
 include("model.jl")
-export savechain, loadchain
+export save, load
 export experiment, strain, backbone, iptg, plasmid, chain, model
 export simulate, priorsimulate, priorpredict, posteriorpredict, conditions
 

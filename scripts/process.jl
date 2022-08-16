@@ -4,10 +4,10 @@ using CSV
 using Plots
 
 
-DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
-FIGDIR = "/home/lewis/sauce/julia/Pyolin/figures/"
+DATADIR = "data/"
+FIGDIR  = "figures/"
 
-PerExperiment(fn) = Experiments(Pyolin.index) |> DataFrame |> CSV.write(DATADIR * fn)
+PerExperiment(fn) = Experiments(Pyolin.index) |> DataFrame |> CSV.write(pwd()*"/"*DATADIR*fn)
 
 function PerGateRpu(inputfn, outputfn)
     frame = CSV.read(DATADIR * inputfn, DataFrame)
@@ -30,10 +30,10 @@ function PerGateRpu(inputfn, outputfn)
             tickfontsize=9,
             size=(px(135), px(70)),
         )
-        savefig(plt, FIGDIR * "response/$(row.strain)-$(row.backbone)-$(row.plasmid)-rpu.svg")
+        savefig(plt, pwd()*"/"*FIGDIR*"response/$(row.strain)-$(row.backbone)-$(row.plasmid)-rpu.svg")
         push!(results, Hill(rpuconvert(inputs, autos, stds), rpuconvert(outputs, autos, stds)))
     end
-    results |> DataFrame |> CSV.write(DATADIR * outputfn)
+    results |> DataFrame |> CSV.write(pwd()*"/"*DATADIR*outputfn)
 end
 
 
