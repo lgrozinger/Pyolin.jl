@@ -50,7 +50,7 @@ import Tables.getcolumn
 import Tables.columnnames
 
 # configurations
-const DATADIR   = "data/dataset/"
+const DATADIR   = dirname(dirname(@__FILE__)) * "/data/dataset/"
 const CHANNEL   = "B1-H"
 const AUTOFLUOR = "1201"
 const STANDARD  = "1717"
@@ -68,7 +68,9 @@ export rpuconvert, rpuevents
 
 include("responsefunction.jl")
 export Hill, Hills
-export compatible
+export compatible, orthogonal
+export inputs, outputs, autos, standards
+export inputhigh, inputlow, outputhigh, outputlow
 
 include("model.jl")
 export save, load

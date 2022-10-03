@@ -12,20 +12,6 @@ function _j1_(y₀, y₁, N)
     J, _ = build_function(j, x, [k, n], expression=Val{false})
     J
 end
-function _f2_()
-    function (x, p)
-        y₀, y₁, k, n = p
-        ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
-    end
-end
-function _j2_(N)
-    @variables y₀ y₁ k n x[1:N]
-    x = collect(x)
-    expression = ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
-    j = Symbolics.jacobian(expression, [y₀, y₁, k, n])
-    J, _ = build_function(j, x, [y₀, y₁, k, n], expression=Val{false})
-    J
-end
 
 function lsq(X::Vector{T}, Y::Vector{T}) where {T<:Real}
     y₀, y₁ = minimum(Y), maximum(Y)
@@ -63,13 +49,15 @@ struct Hill{T<:Real}
     ymax::T
     K::T
     n::T
+    ins::Vector{T}
+    outs::Vector{T}
 end
 
 function Hill(inputs::Vector{<:Experiment}, outputs::Vector{<:Experiment})
     s, b, p = outputs[1].strain, outputs[1].backbone, outputs[1].plasmid
     X, Y = median.(inputs), median.(outputs)
     y₀, y₁, k, n = lsq(X, Y)
-    Hill(s, b, p, y₀, y₁, k, n)
+    Hill(s, b, p, y₀, y₁, k, n, X, Y)
 end
 
 function Hill(strain, backbone, plasmid)
@@ -95,6 +83,19 @@ Hills(fn::AbstractString) = Hills(CSV.read(fn, DataFrame))
 function (R::Hill)(x::T) where {T<:Real}
     y0, y1, n, K = R.ymin, R.ymax, R.n, R.K
     y0 + (y1 - y0) * K^n / (x^n + K^n)
+end
+
+function inputs(x::Hill)
+    Experiments(search(x.strain, x.backbone, INPUT))
+end
+function outputs(x::Hill)
+    Experiments(search(x.strain, x.backbone, x.plasmid))
+end
+function autos(x::Hill)
+    Experiments(search(x.strain, x.backbone, AUTOFLUOR))
+end
+function standards(x::Hill)
+    Experiments(search(x.strain, x.backbone, STANDARD))
 end
 
 repressor(x::Hill)              = split(x.plasmid, "_")[1]
@@ -128,9 +129,8 @@ end
 
 @userplot NotPlot
 @recipe function f(x::NotPlot)
-    inputs, outputs = x.args
-    xs = range(0.8*minimum(median.(inputs)), 1.125*maximum(median.(inputs)), 100)
-    h = Hill(inputs, outputs)
+    h, = x.args
+    xs = range(0.8*minimum(h.ins), 1.125*maximum(h.ins), 100)
 
     xlabel --> "Input"
     ylabel --> "Output"
@@ -152,7 +152,7 @@ end
         markersize --> 5
         linewidth := 1
         label := "Data points"
-        inputs, outputs
+        h.ins, h.outs
     end
 
     if valid(h) && get(plotattributes, :thresholds, false)
@@ -171,5 +171,50 @@ end
             [outputhigh(h), outputlow(h)]
         end
     end
-    
+end
+
+@userplot NotNotPlot
+@recipe function f(x::NotNotPlot)
+    h, = x.args
+    xs = range(0.8*minimum(h.ins), 1.125*maximum(h.ins), 100)
+
+    xlabel --> "Output"
+    ylabel --> "Input"
+    guidefontsize  --> 10
+    legendfontsize --> 10
+    tickfontsize   --> 10
+    palette --> :Accent_8
+
+    @series begin
+        seriestype := :line
+        linewidth --> 3
+        label := "Hill model"
+        h.(xs), collect(xs)
+    end
+
+    @series begin
+        seriestype := :scatter
+        markershape := :circle
+        markersize --> 5
+        linewidth := 1
+        label := "Data points"
+        h.outs, h.ins
+    end
+
+    if valid(h) && get(plotattributes, :thresholds, false)
+        @series begin
+            seriestype := :hline
+            linewidth := 2
+            linestyle := :dash
+            label := "Input thresholds"
+            [inputlow(h), inputhigh(h)]
+        end
+        @series begin
+            seriestype := :vline
+            linewidth := 2
+            linestyle := :dash
+            label := "Output thresholds"
+            [outputhigh(h), outputlow(h)]
+        end
+    end
 end

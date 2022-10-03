@@ -9,8 +9,8 @@ using LsqFit
 using LaTeXStrings
 using Symbolics
 
-DATADIR = "/home/lewis/sauce/julia/Pyolin/data/"
-FIGDIR = "/home/lewis/sauce/julia/Pyolin/figures/fitting-hill/"
+DATADIR = "/home/lewis/oldhome/sauce/julia/Pyolin/data/"
+FIGDIR = "/home/lewis/oldhome/sauce/julia/Pyolin/figures/fitting-hill/"
 
 frame = CSV.read(DATADIR * "experimentstats.csv", DataFrame)
 

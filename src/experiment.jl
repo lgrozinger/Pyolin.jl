@@ -16,7 +16,6 @@ end
 function Experiment(strain, backbone, plasmid, iptg)
     row = search(strain, backbone, plasmid, iptg)
     fn = String255(row.filename)
-    @show row
     samples = DEFGATE!(events(row))
     Experiment(
         String63(strain),
@@ -78,11 +77,14 @@ events(e::Experiment) = DEFGATE!(events(row(e)))
 Base.length(e::Experiment) = length(events(e)[CHANNEL])
 StatsBase.median(e::Experiment) = e.median
 StatsBase.mean(e::Experiment) = e.mean
+StatsBase.geomean(e::Experiment) = geomean(events(e)[CHANNEL])
 StatsBase.var(e::Experiment) = e.var
+geovar(e::Experiment) = exp(var(log.(events(e)[CHANNEL])))
 StatsBase.maximum(e::Experiment) = e.max
 StatsBase.minimum(e::Experiment) = e.min
 StatsBase.quantile(e::Experiment, α::T) where {T<:Real} = quantile(events(e)[CHANNEL], α)
 StatsBase.sample(e::Experiment, N::Int; replace=false) = sample(events(e)[CHANNEL], N; replace=replace)
+
 
 # fitting
 Distributions.fit(d::Type{Normal}, e::Experiment) = d(e.mean, √(e.var))
@@ -107,7 +109,6 @@ function rpuevents(x::Experiment{T}, standard::Experiment{T}) where {T<:Real}
 end
 function rpuevents(x::Experiment{T}, auto::Experiment{T}, standard::Experiment{T}) where {T<:Real}
     if median(x) < median(auto)
-        @warn "RPU conversion smudge for $(x.strain), $(x.backbone), $(x.plasmid), $(x.iptg)\nMedian of experiment: $(x.median)\nMedian of autofluorescence: $(auto.median)"
         c = eps(T)
     else
         c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
@@ -119,7 +120,6 @@ rpuevents(x::AbstractVector, standard::AbstractVector) = rpuevents.(x, standard)
 
 function rpuconvert(x::Experiment, auto::Experiment, standard::Experiment)
     if median(x) < median(auto)
-        @warn "RPU conversion smudge for $(x.strain), $(x.backbone), $(x.plasmid), $(x.iptg)\nMedian of experiment: $(x.median)\nMedian of autofluorescence: $(auto.median)"
         c = eps(typeof(x).parameters[1])
     else
         c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
