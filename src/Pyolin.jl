@@ -1,6 +1,5 @@
 module Pyolin
 
-using InlineStrings
 using CSV
 using Tables
 using DataFrames
@@ -13,14 +12,12 @@ using Plots
 using StatsPlots
 using HypothesisTests
 using LinearAlgebra
-
 using Turing
 using DynamicHMC
 using Zygote
 using ReverseDiff
 using Memoization
 Turing.setadbackend(:forwarddiff)
-
 using MCMCChains
 using MCMCChainsStorage
 using HDF5
@@ -29,6 +26,7 @@ using Statistics
 using Distances
 using LsqFit
 using Symbolics
+using Flux
 
 import StatsBase.mean
 import StatsBase.median
@@ -50,21 +48,20 @@ import Tables.getcolumn
 import Tables.columnnames
 
 # configurations
-const DATADIR   = dirname(dirname(@__FILE__)) * "/data/dataset/"
-const CHANNEL   = "B1-H"
-const AUTOFLUOR = "1201"
-const STANDARD  = "1717"
-const INPUT     = "1818"
+const DATADIR   = "/home/lewis/data/pyolin_dataset/" # where the dataset can be found
+const CHANNEL   = "B1-H" # the interesting channel
+const AUTOFLUOR = "1201" # the codename for the autoflourescent measurement construct
+const STANDARD  = "1717" # the codename for the standardisation construct
+const INPUT     = "1818" # the codename for the input sensor measurement construct
 
 include("utils.jl")
 include("processing.jl")
-export search, events
-
 include("gates.jl")
 
 include("experiment.jl")
-export Experiment, Experiments, Auto, Autos, Standard, Standards, Input, Inputs
-export rpuconvert, rpuevents
+export events
+export Experiment, RawExperiment, RPUExperiment
+export Auto, Autos, Standard, Standards, Input, Inputs
 
 include("responsefunction.jl")
 export Hill, Hills
@@ -89,6 +86,6 @@ include("plots.jl")
 
 export median, mean, var, cov, quantile, fit, sample, varvar, ApproximateTwoSampleKSTest
 
-include("probabilistic.jl")
+# include("probabilistic.jl")
 
 end # module

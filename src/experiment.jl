@@ -1,144 +1,86 @@
+using FileIO
+using StatsBase
+using Distributions
+
 const DEFGATE! = (Zscore!("B1-A", 3.5) ∘ Zscore!("SSC-H", 3.5) ∘ Zscore!("FSC-H", 3.5) ∘ NonZero!("FSC-A", "SSC-A", "B1-H", "B1-A"))
 
-struct Experiment{T<:Real}
-    strain::String63
-    backbone::String63
-    plasmid::String63
+abstract type Experiment{T<:Real} end
+
+function (::Type{T})(x::DataFrameRow) where {T<:Experiment}
+    flowsample = FileIO.load(DATADIR * x.filename)
+    return T(
+        convert(String, x.strain),
+        convert(String, x.backbone),
+        convert(String, x.plasmid),
+        x.iptg,
+        flowsample
+    )
+end
+
+function (::Type{T})(x::DataFrame) where {T<:Experiment}
+    return T.(eachrow(x))
+end
+
+function for_other_plasmid(e::Experiment, other_plasmid)
+    match(x) = all(getproperty(x, s) == getproperty(e, s) for s in [:strain, :backbone, :iptg])
+    return filter(x -> x.plasmid == other_plasmid, filter(match, index))
+end
+
+Auto(e::T) where {T<:Experiment}     = T(for_other_plasmid(e, "1201"))[1]
+Input(e::T) where {T<:Experiment}    = T(for_other_plasmid(e, "1818"))[1]
+Standard(e::T) where {T<:Experiment} = T(for_other_plasmid(e, "1717"))[1]
+
+Autos(E)     = Auto.(E)
+Inputs(E)    = Input.(E)
+Standards(E) = Standard.(E)
+
+Base.size(e::Experiment, args...) = size(events(e), args...)
+StatsBase.median(e::Experiment)  = median(events(e))
+StatsBase.mean(e::Experiment)    = mean(events(e))
+StatsBase.var(e::Experiment)     = var(events(e))
+StatsBase.maximum(e::Experiment) = maximum(events(e))
+StatsBase.minimum(e::Experiment) = minimum(events(e))
+
+function StatsBase.sample(e::Experiment, N::Int; replace=false)
+    return sample(events(e), N; replace=replace)
+end
+
+function Distributions.fit(d::Type{Normal}, e::Experiment)
+    return Normal(mean(e), sqrt(var(e)))
+end
+
+function Distributions.fit(d::Type{LogNormal}, e::Experiment)
+    return LogNormal(mean(e), sqrt(var(e)))
+end
+
+function Distributions.fit(d::Type{<:UnivariateDistribution}, e::Experiment)
+    return fit(d, events(e)[CHANNEL])
+end
+
+struct RawExperiment{T<:Real, I} <: Experiment{T}
+    strain::String
+    backbone::String
+    plasmid::String
     iptg::Int
-    mean::T
-    median::T
-    var::T
-    max::T
-    min::T
-    fn::String255
+    flow::FlowSample{T, I}
 end
 
-function Experiment(strain, backbone, plasmid, iptg)
-    row = search(strain, backbone, plasmid, iptg)
-    fn = String255(row.filename)
-    samples = DEFGATE!(events(row))
-    Experiment(
-        String63(strain),
-        String63(backbone),
-        String63(plasmid),
-        iptg,
-        mean(samples[CHANNEL]),
-        median(samples[CHANNEL]),
-        var(samples[CHANNEL]),
-        maximum(samples[CHANNEL]),
-        minimum(samples[CHANNEL]),
-        fn
-    )
+function events(e::RawExperiment)
+    return Vector(DEFGATE!(e.flow).data[CHANNEL])
 end
 
-Experiment(row::DataFrameRow) = Experiment(row.strain, row.backbone, row.plasmid, row.iptg)
-
-Experiments(frame) = Experiment.(eachrow(frame))
-
-function Experiments(fn::AbstractString)
-    function rowfun(r)
-        Experiment(
-            String63(r.strain), String63(r.backbone), String63(r.plasmid), r.iptg,
-            r.mean, r.median, r.var, r.max, r.min, String255(r.fn)
-        )
-    end
-    rowfun.(eachrow(CSV.read(fn, DataFrame)))
+struct RPUExperiment{T<:Real, I} <: Experiment{T}
+    strain::String
+    backbone::String
+    plasmid::String
+    iptg::Int
+    flow::FlowSample{T, I}
 end
 
-function Experiments(strain, backbone, plasmid, fn::AbstractString)
-    function rowfun(r)
-        Experiment(
-            String63(r.strain), String63(r.backbone), String63(r.plasmid), r.iptg,
-            r.mean, r.median, r.var, r.max, r.min, String255(r.fn)
-        )
-    end
-    frame = CSV.read(fn, DataFrame)
-    filter!(r -> r.strain == strain && r.backbone == backbone && r.plasmid == plasmid, frame)
-    sort!(frame, [:iptg])
-    rowfun.(eachrow(frame))
+function events(e::RPUExperiment)
+    raw = RawExperiment(e.strain, e.backbone, e.plasmid, e.iptg, e.flow)
+    auto = median(Auto(raw))
+    standard = median(Standard(raw))
+    return events(raw) ./ standard
+#    return (events(raw) .- auto) ./ (standard - auto)
 end
-
-function Experiments(strain, backbone, plasmid)
-    iptgs = sort(unique(index.iptg))
-    [Experiment(strain, backbone, plasmid, iptg) for iptg in iptgs]
-end
-
-Auto(e::Experiment)     = Experiment(e.strain, e.backbone, String63("1201"), e.iptg)
-Standard(e::Experiment) = Experiment(e.strain, e.backbone, String63("1717"), e.iptg)
-Input(e::Experiment)    = Experiment(e.strain, e.backbone, String63("1818"), e.iptg)
-Autos(E::Vector{<:Experiment})     = Auto.(E)
-Standards(E::Vector{<:Experiment}) = Standard.(E)
-Inputs(E::Vector{<:Experiment}) = Input.(E)
-
-
-# experimental data
-row(e::Experiment) = search(e.strain, e.backbone, e.plasmid, e.iptg)
-events(e::Experiment) = DEFGATE!(events(row(e)))
-Base.length(e::Experiment) = length(events(e)[CHANNEL])
-StatsBase.median(e::Experiment) = e.median
-StatsBase.mean(e::Experiment) = e.mean
-StatsBase.geomean(e::Experiment) = geomean(events(e)[CHANNEL])
-StatsBase.var(e::Experiment) = e.var
-geovar(e::Experiment) = exp(var(log.(events(e)[CHANNEL])))
-StatsBase.maximum(e::Experiment) = e.max
-StatsBase.minimum(e::Experiment) = e.min
-StatsBase.quantile(e::Experiment, α::T) where {T<:Real} = quantile(events(e)[CHANNEL], α)
-StatsBase.sample(e::Experiment, N::Int; replace=false) = sample(events(e)[CHANNEL], N; replace=replace)
-
-
-# fitting
-Distributions.fit(d::Type{Normal}, e::Experiment) = d(e.mean, √(e.var))
-function Distributions.fit(d::Type{<:UnivariateDistribution}, e::Experiment; g=DEFGATE!)
-    d(params(fit(d, g(events(e))[CHANNEL]))...)
-end
-
-# tables interface
-columnnames(e::Experiment) = schema([e]).names
-getcolumn(e::Experiment, i::Int) = getproperty(e, columnnames(e)[i])
-getcolumn(e::Experiment, s::Symbol) = getproperty(e, s)
-
-istable(x::Vector{Experiment})             = true
-rowaccess(x::Vector{Experiment})           = true
-rows(x::Vector{Experiment})                = x
-schema(x::Vector{T}) where {T<:Experiment} = Tables.Schema(fieldnames(T), fieldtypes(T))
-
-# rpu conversion
-function rpuevents(x::Experiment{T}, standard::Experiment{T}) where {T<:Real}
-    c = 1 / median(standard)
-    sample(x, length(x)) .* c
-end
-function rpuevents(x::Experiment{T}, auto::Experiment{T}, standard::Experiment{T}) where {T<:Real}
-    if median(x) < median(auto)
-        c = eps(T)
-    else
-        c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
-    end
-    sample(x, length(x)) .* c
-end
-rpuevents(x::AbstractVector, auto::AbstractVector, standard::AbstractVector) = rpuevents.(x, auto, standard)
-rpuevents(x::AbstractVector, standard::AbstractVector) = rpuevents.(x, standard)
-
-function rpuconvert(x::Experiment, auto::Experiment, standard::Experiment)
-    if median(x) < median(auto)
-        c = eps(typeof(x).parameters[1])
-    else
-        c = (median(x) - median(auto)) / median(x) / (median(standard) - median(auto))
-    end
-    Experiment(
-        x.strain, x.backbone, x.plasmid, x.iptg,
-        x.mean * c, x.median * c, x.var * c^2, x.max * c, x.min * c,
-        x.fn
-    )
-end
-rpuconvert(x::AbstractVector, auto::AbstractVector, standard::AbstractVector) = rpuconvert.(x, auto, standard)
-
-function rpuconvert(x::Experiment, standard::Experiment)
-    c = 1 / median(standard)
-    Experiment(
-        x.strain, x.backbone, x.plasmid, x.iptg,
-        x.mean * c, x.median * c, x.var * c^2, x.max * c, x.min * c,
-        x.fn
-    )
-end
-rpuconvert(x::AbstractVector, standard::AbstractVector) = rpuconvert.(x, standard)
-

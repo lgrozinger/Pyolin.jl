@@ -25,9 +25,8 @@ end
     legendposition := :outerright
     xticks := (1:length(x), x)
     yticks := (1:length(y), y)
-    xlims := (-1/2, length(x) + 1/2)
-    ylims := (-1/2, length(y) + 1/2)
-    showaxis := :false
+    xlims := (1/2, length(x) + 1/2)
+    ylims := (1/2, length(y) + 1/2)
     tick_direction := :none
     grid := false
 

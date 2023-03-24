@@ -1,63 +1,58 @@
-function _f1_(y₀, y₁)
-    function (x, p)
-        k, n = p
-        ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
-    end
+function transfer(x, p)
+    y₀, y₁, k, n = p
+    return y₀ .+ y₁ ./ (1 .+ (x ./ k).^n)
 end
-function _j1_(y₀, y₁, N)
-    @variables k n x[1:N]
-    x = collect(x)
-    expression = ((y₁ - y₀) * k^n) ./ (k^n .+ x.^n) .+ y₀
-    j = Symbolics.jacobian(expression, [k, n])
-    J, _ = build_function(j, x, [k, n], expression=Val{false})
-    J
+
+function lsq(X::Vector{T}, Y::Vector{T}, W::Vector{T}) where {T<:Real}
+    y₀, y₁ = minimum(Y), maximum(Y)
+    x₀, x₁ = minimum(X), maximum(X)
+    opts = Dict(
+        :upper => [T(Inf), T(Inf), T(Inf), T(Inf)],
+        :lower => [eps(T), eps(T), eps(T), one(T)],
+        :show_trace => false,
+        :maxIter => 1024,
+        :autodiff => :forwarddiff,
+    )
+    return curve_fit(transfer, X, Y, W, [y₀, y₁, x₀/2 + x₁/2, one(T)]; opts...)
 end
 
 function lsq(X::Vector{T}, Y::Vector{T}) where {T<:Real}
     y₀, y₁ = minimum(Y), maximum(Y)
     x₀, x₁ = minimum(X), maximum(X)
+    
     opts = Dict(
-        :upper => [T(Inf), T(256.0)],
-        :lower => [x₀, one(T)],
+        :upper => [T(Inf), T(Inf), T(Inf), T(Inf)],
+        :lower => [eps(T), eps(T), eps(T), eps(T)],
         :show_trace => false,
-        :maxIter => 1000
+        :maxIter => 1024,
+        :autodiff => :forwarddiff,
     )
-    try
-        k, n = curve_fit(
-            _f1_(y₀, y₁),
-            _j1_(y₀, y₁, length(X)),
-            X,
-            Y,
-            [x₀/2 + x₁/2, one(T)];
-            opts...,
-        ).param
-        y₀, y₁, k, n
-    catch e
-        if e isa LinearAlgebra.SingularException
-            T(0.0), T(0.0), T(0.0), T(1.0)
-        else
-            throw(e)
-        end
-    end
+    return curve_fit(transfer, X, Y, [y₀, y₁, x₀/2 + x₁/2, one(T)]; opts...)
 end
 
 struct Hill{T<:Real}
-    strain::String63
-    backbone::String63
-    plasmid::String63
-    ymin::T
-    ymax::T
-    K::T
-    n::T
+    strain::String
+    backbone::String
+    plasmid::String
+    fit::LsqFit.LsqFitResult
     ins::Vector{T}
     outs::Vector{T}
 end
 
 function Hill(inputs::Vector{<:Experiment}, outputs::Vector{<:Experiment})
     s, b, p = outputs[1].strain, outputs[1].backbone, outputs[1].plasmid
-    X, Y = median.(inputs), median.(outputs)
-    y₀, y₁, k, n = lsq(X, Y)
-    Hill(s, b, p, y₀, y₁, k, n, X, Y)
+    function nonzero(x::Vector{T}) where {T<:Real}
+        min = minimum(x)
+        if min < 0
+            return x .- min
+        else
+            return x
+        end
+    end
+    X, Y = nonzero(median.(inputs)), nonzero(median.(outputs))
+    W = 1 ./ var.(outputs)
+    fit = lsq(X, Y, W)
+    Hill(s, b, p, fit, X, Y)
 end
 
 function Hill(strain, backbone, plasmid)
@@ -68,21 +63,15 @@ function Hill(strain, backbone, plasmid)
     Hill(rpuconvert(inputs, autos, stds), rpuconvert(outputs, autos, stds))
 end
 
-function Hills(df)
-    function rowfun(r)
-        Hill(
-            String63(r.strain), String63(r.backbone), String63(r.plasmid),
-            r.ymin, r.ymax, r.K, r.n
-        )
-    end
-    rowfun.(eachrow(df))
-end
-
 Hills(fn::AbstractString) = Hills(CSV.read(fn, DataFrame))
 
+y0(R::Hill) = R.fit.param[1]
+y1(R::Hill) = R.fit.param[2] + y0(R)
+K(R::Hill)  = R.fit.param[3]
+N(R::Hill)  = R.fit.param[4]
+
 function (R::Hill)(x::T) where {T<:Real}
-    y0, y1, n, K = R.ymin, R.ymax, R.n, R.K
-    y0 + (y1 - y0) * K^n / (x^n + K^n)
+    y0(R) + (y1(R) - y0(R)) * K(R)^N(R) / (x^N(R) + K(R)^N(R))
 end
 
 function inputs(x::Hill)
@@ -105,12 +94,11 @@ orthogonal(x::Hill, y::Hill)    = !samestrain(x, y) || !samerepressor(x, y)
 outputhigh(x::Hill)             = x.ymax / 2
 outputlow(x::Hill)              = x.ymin * 2
 function inputlow(x::Hill)
-    y₀, y₁, k, n = x.ymin, x.ymax, x.K, x.n
-    (k^n * (2 / (1 - y₀ / (y₁ - y₀)) - 1))^(1/n)
+    (K(x)^N(x) * (2 / (1 - y0(x) / (y1(x) - y0(x))) - 1))^(1/N(x))
 end
 function inputhigh(x::Hill)
     y₀, y₁, k, n = x.ymin, x.ymax, x.K, x.n
-    (k^n * (y₁ / y₀ - 2))^(1/n)
+    (K(x)^N(x) * (y1(x) / y0(x) - 2))^(1/N(x))
 end
 valid(x::Hill)                  = outputhigh(x) > outputlow(x) #&& inputhigh(x) > inputlow(x)
 invertshigh(x::Hill, y::Hill)   = y(outputhigh(x)) < outputlow(y)
